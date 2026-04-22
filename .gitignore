@@ -1,0 +1,15 @@
+.gradle/
+**/build/
+**/.externalNativeBuild/
+**/.cxx/
+**/.idea/
+**/*.iml
+local.properties
+*.apk
+*.aab
+captures/
+~$*.docx
+~$*.xlsx
+~$*.pptx
+__pycache__/
+*.pyc
