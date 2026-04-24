@@ -29,13 +29,6 @@ function Find-LatestDir([string]$root) {
   return $d.FullName
 }
 
-function Find-PreferredNdk([string]$ndkRoot) {
-  if (-not (Test-Path -LiteralPath $ndkRoot)) { return "" }
-  $p = Join-Path $ndkRoot "26.1.10909125"
-  if (Test-Path -LiteralPath $p) { return $p }
-  return Find-LatestDir $ndkRoot
-}
-
 function Find-AndroidSdk() {
   $lp = Join-Path (Get-Location).Path "local.properties"
   if (Test-Path -LiteralPath $lp) {
@@ -165,7 +158,7 @@ if ($BuildAndroidSo) {
   }
   if ([string]::IsNullOrWhiteSpace($NdkPath)) {
     $guess = Join-Path $env:LOCALAPPDATA "Android\Sdk\ndk"
-    $NdkPath = Find-PreferredNdk $guess
+    $NdkPath = Find-LatestDir $guess
   }
   $NdkPath = Resolve-PathSafe $NdkPath
   if ([string]::IsNullOrWhiteSpace($NdkPath)) {
