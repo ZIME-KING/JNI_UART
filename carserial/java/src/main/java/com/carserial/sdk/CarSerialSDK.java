@@ -78,7 +78,7 @@ public final class CarSerialSDK {
   }
 
   public boolean init(String ttyPath) {
-    if (ttyPath == null || ttyPath.isEmpty()) ttyPath = "/dev/ttyS7";
+    if (ttyPath == null || ttyPath.isEmpty()) ttyPath = "/dev/ttyAS0";
     if (!inited.compareAndSet(false, true)) return true;
     boolean ok = NativeBridge.nativeInit(ttyPath, eventSink);
     if (!ok) {

@@ -49,6 +49,13 @@ if (ANDROID)
     if(log-lib)
         target_link_libraries(carserial_host_tool ${log-lib})
     endif()
+
+    option(CAR_SERIAL_USE_TTYAS0 "Use /dev/ttyAS0 as default port on Android when port is omitted (default uses /dev/ttyS7)" OFF)
+    if (CAR_SERIAL_USE_TTYAS0)
+        target_compile_definitions(carserial_host_tool PRIVATE CAR_SERIAL_DEFAULT_TTY=\"/dev/ttyAS0\")
+    else()
+        target_compile_definitions(carserial_host_tool PRIVATE CAR_SERIAL_DEFAULT_TTY=\"/dev/ttyS7\")
+    endif()
 endif()
 
 if (NOT ANDROID)

@@ -111,6 +111,8 @@ bool LinkManager::doSetupLocked() {
              toHex(bytes.data(), static_cast<int>(bytes.size()), 256).c_str());
   int w = port_.write(bytes.data(), static_cast<int>(bytes.size()));
   if (w != static_cast<int>(bytes.size())) {
+    Log::write(LogLevel::Error, "carserial", "write setup failed path=%s expected=%d got=%d errno=%d", ttyPath_.c_str(),
+               static_cast<int>(bytes.size()), w, port_.lastErrno());
     return false;
   }
   return true;
@@ -125,7 +127,12 @@ int LinkManager::send(uint8_t frameType, const std::vector<uint8_t>& payload) {
   Log::write(LogLevel::Debug, "carserial", "TX len=%d, hex: %s", static_cast<int>(bytes.size()),
              toHex(bytes.data(), static_cast<int>(bytes.size()), 256).c_str());
   int w = port_.write(bytes.data(), static_cast<int>(bytes.size()));
-  if (w != static_cast<int>(bytes.size())) return -1;
+  if (w != static_cast<int>(bytes.size())) {
+    Log::write(LogLevel::Error, "carserial", "write failed path=%s seq=%u frameType=0x%02X expected=%d got=%d errno=%d",
+               ttyPath_.c_str(), static_cast<unsigned>(seq), static_cast<unsigned>(frameType), static_cast<int>(bytes.size()), w,
+               port_.lastErrno());
+    return -1;
+  }
   return seq;
 }
 
@@ -143,7 +150,12 @@ int LinkManager::sendWithAck(uint8_t frameType, const std::vector<uint8_t>& payl
       Log::write(LogLevel::Debug, "carserial", "TX len=%d, hex: %s", static_cast<int>(bytes.size()),
                  toHex(bytes.data(), static_cast<int>(bytes.size()), 256).c_str());
       int w = port_.write(bytes.data(), static_cast<int>(bytes.size()));
-      if (w != static_cast<int>(bytes.size())) return -1;
+      if (w != static_cast<int>(bytes.size())) {
+        Log::write(LogLevel::Error, "carserial",
+                   "write failed path=%s seq=%u frameType=0x%02X expected=%d got=%d errno=%d", ttyPath_.c_str(),
+                   static_cast<unsigned>(seq), static_cast<unsigned>(frameType), static_cast<int>(bytes.size()), w, port_.lastErrno());
+        return -1;
+      }
     }
 
     std::unique_lock<std::mutex> lock(mu_);

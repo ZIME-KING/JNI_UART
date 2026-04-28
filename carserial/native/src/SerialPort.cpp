@@ -93,10 +93,14 @@ bool SerialPort::open(const std::string& path, int baudrate) {
 
   cfmakeraw(&tty);
   tty.c_cflag |= (CLOCAL | CREAD);
+  #ifdef CRTSCTS
+  tty.c_cflag &= ~CRTSCTS;
+  #endif
   tty.c_cflag &= ~CSTOPB;
   tty.c_cflag &= ~PARENB;
   tty.c_cflag &= ~CSIZE;
   tty.c_cflag |= CS8;
+  tty.c_iflag &= ~(IXON | IXOFF | IXANY);
   tty.c_cc[VMIN] = 0;
   tty.c_cc[VTIME] = 1;
 
@@ -123,6 +127,7 @@ bool SerialPort::open(const std::string& path, int baudrate) {
     return false;
   }
 
+  tcflush(fd_, TCIOFLUSH);
   if (tcsetattr(fd_, TCSANOW, &tty) != 0) {
     last_errno_ = errno;
     close();

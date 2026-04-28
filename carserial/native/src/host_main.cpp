@@ -188,8 +188,11 @@ static void usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  // 默认参数：COM5 / 460800。
-  std::string tty = "COM5";
+#ifndef CAR_SERIAL_DEFAULT_TTY
+#define CAR_SERIAL_DEFAULT_TTY ""
+#endif
+
+  std::string tty = (std::string(CAR_SERIAL_DEFAULT_TTY).empty() ? "COM5" : CAR_SERIAL_DEFAULT_TTY);
   int baud = 460800;
   bool updateDemo = false;
   bool sendRadioFreq = false;
@@ -209,10 +212,16 @@ int main(int argc, char** argv) {
   int tailMs = 500;
   bool echo = true;
 
-  // argv[1] 作为串口名（COMx）
-  if (argc >= 2 && argv[1] && std::string(argv[1]).size() > 0) tty = argv[1];
+  int optStart = 1;
+  if (argc >= 2 && argv[1]) {
+    std::string a1 = argv[1];
+    if (!a1.empty() && a1[0] != '-') {
+      tty = a1;
+      optStart = 2;
+    }
+  }
   // 解析可选参数
-  for (int i = 2; i < argc; i++) {
+  for (int i = optStart; i < argc; i++) {
     const char* a = argv[i];
     if (!a) continue;
     if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
@@ -323,6 +332,21 @@ int main(int argc, char** argv) {
       logFile << line << "\n";
       logFile.flush();
     }
+  };
+
+  auto logTxFrame = [&](int seq, uint8_t frameType, const std::vector<uint8_t>& payload) {
+    if (!logFile.is_open()) return;
+    std::vector<uint8_t> raw = seq < 0 ? std::vector<uint8_t>() : carserial::FrameCodec::encode(static_cast<uint8_t>(seq & 0xFF), frameType,
+                                                                                                 payload.empty() ? nullptr : payload.data(),
+                                                                                                 static_cast<int>(payload.size()));
+    std::ostringstream os;
+    os << "{\"tsMs\":" << nowMs() << ",\"dir\":\"TX\",\"kind\":\"frame\",\"seq\":" << seq << ",\"frameType\":" << static_cast<int>(frameType)
+       << ",\"payloadHex\":";
+    writeJsonString(os, toHex(payload));
+    os << ",\"rawHex\":";
+    writeJsonString(os, toHex(raw));
+    os << "}";
+    logJson(os.str());
   };
 
   svc.setEventSink([&](int eventId, int p1, int p2, int p3, const std::string&, const std::vector<uint8_t>& data) {
@@ -437,7 +461,8 @@ int main(int argc, char** argv) {
     data.push_back(static_cast<uint8_t>(radioFreq & 0xFF));
     data.push_back(static_cast<uint8_t>(radioBand & 0xFF));
     std::vector<uint8_t> payload = makeMsg(0x05, 0x80, data);
-    svc.sendRaw(0x06, payload, needAck);
+    int seq = svc.sendRaw(0x06, payload, needAck);
+    logTxFrame(seq, 0x06, payload);
   }
 
   if (updateDemo) {
@@ -446,27 +471,44 @@ int main(int argc, char** argv) {
     // - 0x81 begin
     // - 0x82 data（这里发送 5 次小数据块）
     // - 0x83 end
-    svc.sendRaw(0x06, makeMsg(0x07, 0x80, {}), needAck);
+    {
+      std::vector<uint8_t> payload = makeMsg(0x07, 0x80, {});
+      int seq = svc.sendRaw(0x06, payload, needAck);
+      logTxFrame(seq, 0x06, payload);
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    svc.sendRaw(0x06, makeMsg(0x07, 0x81, {}), needAck);
+    {
+      std::vector<uint8_t> payload = makeMsg(0x07, 0x81, {});
+      int seq = svc.sendRaw(0x06, payload, needAck);
+      logTxFrame(seq, 0x06, payload);
+    }
     for (int i = 0; i < 5; i++) {
       std::vector<uint8_t> chunk(16, static_cast<uint8_t>(i));
-      svc.sendRaw(0x06, makeMsg(0x07, 0x82, chunk), needAck);
+      std::vector<uint8_t> payload = makeMsg(0x07, 0x82, chunk);
+      int seq = svc.sendRaw(0x06, payload, needAck);
+      logTxFrame(seq, 0x06, payload);
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    svc.sendRaw(0x06, makeMsg(0x07, 0x83, {}), needAck);
+    {
+      std::vector<uint8_t> payload = makeMsg(0x07, 0x83, {});
+      int seq = svc.sendRaw(0x06, payload, needAck);
+      logTxFrame(seq, 0x06, payload);
+    }
   }
 
   if (sendMsg) {
     std::vector<uint8_t> payload = makeMsg(static_cast<uint8_t>(msgType & 0xFF), static_cast<uint8_t>(msgCmd & 0xFF), msgData);
-    svc.sendRaw(0x06, payload, needAck);
+    int seq = svc.sendRaw(0x06, payload, needAck);
+    logTxFrame(seq, 0x06, payload);
   }
 
   if (sendRaw) {
     if (rawPayload.empty()) {
       std::cerr << "--send-raw requires --payload-hex" << std::endl;
     } else {
-      svc.sendRaw(static_cast<uint8_t>(rawFrameType & 0xFF), rawPayload, needAck);
+      uint8_t ft = static_cast<uint8_t>(rawFrameType & 0xFF);
+      int seq = svc.sendRaw(ft, rawPayload, needAck);
+      logTxFrame(seq, ft, rawPayload);
     }
   }
 

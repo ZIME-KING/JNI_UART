@@ -4,12 +4,28 @@ param(
   [int]$AndroidApi = 31,
   [string]$NdkPath = "",
   [string]$NinjaPath = "",
-  [switch]$BuildHost = $true,
-  [switch]$BuildAndroidSo = $true,
-  [switch]$Zip = $true
+  [string]$BuildHost = "1",
+  [string]$BuildAndroidSo = "1",
+  [string]$Zip = "1"
 )
 
 $ErrorActionPreference = "Stop"
+
+function Parse-Bool([object]$v, [bool]$defaultValue) {
+  if ($null -eq $v) { return $defaultValue }
+  $s = "$v"
+  if ([string]::IsNullOrWhiteSpace($s)) { return $defaultValue }
+  $s = $s.Trim()
+  if ($s.StartsWith('$')) { $s = $s.Substring(1) }
+  $s = $s.ToLowerInvariant()
+  if ($s -eq "1" -or $s -eq "true" -or $s -eq "yes" -or $s -eq "y" -or $s -eq "on") { return $true }
+  if ($s -eq "0" -or $s -eq "false" -or $s -eq "no" -or $s -eq "n" -or $s -eq "off") { return $false }
+  return $defaultValue
+}
+
+$BuildHostFlag = Parse-Bool $BuildHost $true
+$BuildAndroidSoFlag = Parse-Bool $BuildAndroidSo $true
+$ZipFlag = Parse-Bool $Zip $true
 
 function Resolve-PathSafe([string]$p) {
   if ([string]::IsNullOrWhiteSpace($p)) { return "" }
@@ -127,7 +143,7 @@ $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $bundleDir = Join-Path $out ("bundle_" + $stamp)
 Ensure-Dir $bundleDir
 
-if ($BuildHost) {
+if ($BuildHostFlag) {
   $cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
   if (-not $cmake) {
     $cmake = "C:\Program Files\CMake\bin\cmake.exe"
@@ -159,7 +175,7 @@ if ($BuildHost) {
   Copy-Item -LiteralPath $exe -Destination (Join-Path $dst "carserial_host_tool.exe") -Force
 }
 
-if ($BuildAndroidSo) {
+if ($BuildAndroidSoFlag) {
   if ([string]::IsNullOrWhiteSpace($NdkPath)) {
     $NdkPath = $env:ANDROID_NDK_HOME
   }
@@ -185,43 +201,15 @@ if ($BuildAndroidSo) {
   }
   if (-not $cmake -or -not (Test-Path -LiteralPath $cmake)) { throw "CMake not found." }
 
-  $ninja = Resolve-PathSafe $NinjaPath
-  if ([string]::IsNullOrWhiteSpace($ninja)) {
-    $cmakeBin = Split-Path -Parent $cmake
-    $sdkNinja = Join-Path $cmakeBin "ninja.exe"
-    if (Test-Path -LiteralPath $sdkNinja) {
-      $ninja = $sdkNinja
-    }
-  }
-  if ([string]::IsNullOrWhiteSpace($ninja)) {
-    $ndkNinja = Join-Path $NdkPath "prebuilt\windows-x86_64\bin\ninja.exe"
-    if (Test-Path -LiteralPath $ndkNinja) {
-      $ninja = $ndkNinja
-    }
-  }
-  if ([string]::IsNullOrWhiteSpace($ninja)) {
-    $ninja = Find-Ninja $NinjaPath
-  }
-  if (-not $ninja) {
-    Write-Host "Ninja not found. Recommend: winget install Ninja-build.Ninja -e"
-    throw "Ninja is required for Android CMake build on Windows. If it is installed but not in PATH, pass -NinjaPath <path-to-ninja.exe>."
-  }
-  $ninja = Resolve-PathSafe $ninja
-  if ($ninja -and $ninja.Length -gt 0) {
-    $needCopy = $false
-    if ($ninja.Length -gt 140) { $needCopy = $true }
-    if ($ninja -match '\\Microsoft\\WinGet\\Packages\\') { $needCopy = $true }
-    if ($needCopy) {
-      $tmpNinja = Join-Path $env:TEMP ("ninja_" + [guid]::NewGuid().ToString("N") + ".exe")
-      Copy-Item -LiteralPath $ninja -Destination $tmpNinja -Force
-      $ninja = $tmpNinja
-    }
+  $make = Join-Path $NdkPath "prebuilt\windows-x86_64\bin\make.exe"
+  if (-not (Test-Path -LiteralPath $make)) {
+    throw "make.exe not found under NDK: $make"
   }
 
   $androidBuild = Join-Path $root ("build\android-" + $AndroidAbi)
   Ensure-Dir $androidBuild
 
-  Run "& `"$cmake`" -S carserial/native -B `"$androidBuild`" -G `"Ninja`" -DCMAKE_MAKE_PROGRAM=`"$ninja`" -DANDROID_ABI=$AndroidAbi -DANDROID_PLATFORM=android-$AndroidApi -DCMAKE_TOOLCHAIN_FILE=`"$toolchain`""
+  Run "& `"$cmake`" -S carserial/native -B `"$androidBuild`" -G `"Unix Makefiles`" -DCMAKE_MAKE_PROGRAM=`"$make`" -DANDROID_ABI=$AndroidAbi -DANDROID_PLATFORM=android-$AndroidApi -DCMAKE_TOOLCHAIN_FILE=`"$toolchain`""
   Run "& `"$cmake`" --build `"$androidBuild`" --target carserial carserial_host_tool"
 
   $so = Find-So $androidBuild
@@ -251,7 +239,7 @@ if (Test-Path -LiteralPath (Join-Path $root "doc")) {
   Copy-Item -LiteralPath (Join-Path $root "doc") -Destination (Join-Path $bundleDir "doc") -Recurse -Force
 }
 
-if ($Zip) {
+if ($ZipFlag) {
   $zipPath = Join-Path $out ("bundle_" + $stamp + ".zip")
   if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
   Compress-Archive -LiteralPath $bundleDir -DestinationPath $zipPath
