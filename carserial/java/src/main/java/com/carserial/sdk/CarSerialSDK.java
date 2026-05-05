@@ -88,6 +88,18 @@ public final class CarSerialSDK {
     return ok;
   }
 
+  public boolean init(String ttyPath, int baudrate) {
+    if (ttyPath == null || ttyPath.isEmpty()) ttyPath = "/dev/ttyAS0";
+    if (baudrate <= 0) baudrate = 460800;
+    if (!inited.compareAndSet(false, true)) return true;
+    boolean ok = NativeBridge.nativeInit2(ttyPath, baudrate, eventSink);
+    if (!ok) {
+      inited.set(false);
+      dispatcher.shutdown();
+    }
+    return ok;
+  }
+
   public void deinit() {
     if (!inited.compareAndSet(true, false)) return;
     NativeBridge.nativeDeinit();

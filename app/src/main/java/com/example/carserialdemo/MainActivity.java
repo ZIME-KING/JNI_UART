@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
     });
 
     initBtn.setOnClickListener(v -> {
-      boolean ok = sdk.init("/dev/ttyAS0");
+      boolean ok = sdk.init("/dev/ttyS3", 460800);
       statusView.setText(ok ? "init success" : "init failed");
     });
 

@@ -90,6 +90,40 @@ Java_com_carserial_sdk_NativeBridge_nativeInit(JNIEnv* env, jclass, jstring ttyP
   return ok ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_carserial_sdk_NativeBridge_nativeInit2(JNIEnv* env, jclass, jstring ttyPath, jint baudrate, jobject eventSink) {
+  if (!ttyPath || !eventSink) return JNI_FALSE;
+
+  const char* p = env->GetStringUTFChars(ttyPath, nullptr);
+  std::string path = p ? p : "";
+  if (p) env->ReleaseStringUTFChars(ttyPath, p);
+
+  int baud = static_cast<int>(baudrate);
+  if (baud <= 0) baud = 460800;
+
+  jclass sinkCls = env->GetObjectClass(eventSink);
+  if (!sinkCls) return JNI_FALSE;
+  jmethodID mid = env->GetMethodID(sinkCls, "onNativeEvent", "(IIIILjava/lang/String;[B)V");
+  if (!mid) return JNI_FALSE;
+
+  {
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (g_sink) {
+      env->DeleteGlobalRef(g_sink);
+      g_sink = nullptr;
+    }
+    g_sink = env->NewGlobalRef(eventSink);
+    g_on_event = mid;
+  }
+
+  CarSerialService::instance().setEventSink([](int eventId, int p1, int p2, int p3, const std::string& s, const std::vector<uint8_t>& data) {
+    postEvent(eventId, p1, p2, p3, s, data);
+  });
+
+  bool ok = CarSerialService::instance().init(path, baud);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_carserial_sdk_NativeBridge_nativeDeinit(JNIEnv* env, jclass) {
   CarSerialService::instance().deinit();

@@ -43,7 +43,10 @@ LogLevel Log::runtimeLevel() {
 LogLevel Log::runtimeLevelFromSystemProperty() {
 #if defined(__ANDROID__)
   char value[PROP_VALUE_MAX]{0};
-  int len = __system_property_get("persist.carserial.log.level", value);
+  int len = __system_property_get("debug.carserial.log.level", value);
+  if (len <= 0) {
+    len = __system_property_get("persist.carserial.log.level", value);
+  }
   if (len <= 0) {
     return LogLevel::Info;
   }

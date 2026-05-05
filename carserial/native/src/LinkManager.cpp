@@ -1,6 +1,7 @@
 #include "LinkManager.h"
 
 #include <chrono>
+#include <cstring>
 #include <string>
 
 #include "Log.h"
@@ -61,6 +62,9 @@ bool LinkManager::start(const std::string& ttyPath, int baudrate, FrameHandler f
   {
     std::lock_guard<std::mutex> lock(mu_);
     if (!port_.open(ttyPath_, baudrate_)) {
+      int err = port_.lastErrno();
+      Log::write(LogLevel::Error, "carserial", "open failed path=%s baud=%d errno=%d (%s)", ttyPath_.c_str(), baudrate_, err,
+                 std::strerror(err));
       running_.store(false, std::memory_order_relaxed);
       return false;
     }
@@ -108,7 +112,7 @@ bool LinkManager::doSetupLocked() {
   uint8_t seq = nextSeq();
   std::vector<uint8_t> bytes = FrameCodec::encode(seq, kFrameTypeSetup, nullptr, 0);
   Log::write(LogLevel::Debug, "carserial", "TX len=%d, hex: %s", static_cast<int>(bytes.size()),
-             toHex(bytes.data(), static_cast<int>(bytes.size()), 256).c_str());
+             toHex(bytes.data(), static_cast<int>(bytes.size()), 2048).c_str());
   int w = port_.write(bytes.data(), static_cast<int>(bytes.size()));
   if (w != static_cast<int>(bytes.size())) {
     Log::write(LogLevel::Error, "carserial", "write setup failed path=%s expected=%d got=%d errno=%d", ttyPath_.c_str(),
@@ -125,7 +129,7 @@ int LinkManager::send(uint8_t frameType, const std::vector<uint8_t>& payload) {
   std::vector<uint8_t> bytes = FrameCodec::encode(seq, frameType, payload.data(), static_cast<int>(payload.size()));
   std::lock_guard<std::mutex> lock(mu_);
   Log::write(LogLevel::Debug, "carserial", "TX len=%d, hex: %s", static_cast<int>(bytes.size()),
-             toHex(bytes.data(), static_cast<int>(bytes.size()), 256).c_str());
+             toHex(bytes.data(), static_cast<int>(bytes.size()), 2048).c_str());
   int w = port_.write(bytes.data(), static_cast<int>(bytes.size()));
   if (w != static_cast<int>(bytes.size())) {
     Log::write(LogLevel::Error, "carserial", "write failed path=%s seq=%u frameType=0x%02X expected=%d got=%d errno=%d",
@@ -148,7 +152,7 @@ int LinkManager::sendWithAck(uint8_t frameType, const std::vector<uint8_t>& payl
       std::vector<uint8_t> bytes = FrameCodec::encode(seq, frameType, payload.data(), static_cast<int>(payload.size()));
       std::lock_guard<std::mutex> lock(mu_);
       Log::write(LogLevel::Debug, "carserial", "TX len=%d, hex: %s", static_cast<int>(bytes.size()),
-                 toHex(bytes.data(), static_cast<int>(bytes.size()), 256).c_str());
+                 toHex(bytes.data(), static_cast<int>(bytes.size()), 2048).c_str());
       int w = port_.write(bytes.data(), static_cast<int>(bytes.size()));
       if (w != static_cast<int>(bytes.size())) {
         Log::write(LogLevel::Error, "carserial",
@@ -174,7 +178,13 @@ int LinkManager::sendWithAck(uint8_t frameType, const std::vector<uint8_t>& payl
 
 void LinkManager::readerLoop() {
   uint8_t tmp[2048];
+  auto nextLogRefresh = std::chrono::steady_clock::now();
   while (running_.load(std::memory_order_relaxed)) {
+    auto now = std::chrono::steady_clock::now();
+    if (now >= nextLogRefresh) {
+      Log::setRuntimeLevel(Log::runtimeLevelFromSystemProperty());
+      nextLogRefresh = now + std::chrono::seconds(1);
+    }
     int r = -1;
     {
       std::lock_guard<std::mutex> lock(mu_);
@@ -189,7 +199,7 @@ void LinkManager::readerLoop() {
       continue;
     }
 
-    Log::write(LogLevel::Debug, "carserial", "RX len=%d, hex: %s", r, toHex(tmp, r, 256).c_str());
+    Log::write(LogLevel::Debug, "carserial", "RX len=%d, hex: %s", r, toHex(tmp, r, 2048).c_str());
     parser_.push(tmp, r);
     Frame f;
     while (parser_.pop(&f)) onFrame(f);
@@ -197,7 +207,13 @@ void LinkManager::readerLoop() {
 }
 
 void LinkManager::heartbeatLoop() {
+  auto nextLogRefresh = std::chrono::steady_clock::now();
   while (running_.load(std::memory_order_relaxed)) {
+    auto now = std::chrono::steady_clock::now();
+    if (now >= nextLogRefresh) {
+      Log::setRuntimeLevel(Log::runtimeLevelFromSystemProperty());
+      nextLogRefresh = now + std::chrono::seconds(1);
+    }
     std::this_thread::sleep_for(std::chrono::seconds(2));
     if (!running_.load(std::memory_order_relaxed)) break;
     if (!ensureConnected()) continue;
